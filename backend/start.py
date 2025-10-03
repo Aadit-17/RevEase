@@ -38,5 +38,5 @@ if __name__ == "__main__":
     try:
         uvicorn.run("review.main:app", host="0.0.0.0", port=port, reload=False)
     except Exception as e:
-        logger.error(f"Failed to start server: {str(e)}")
+        logger.error(f"Failed to start server: {str(e)}", exc_info=True)
         raise

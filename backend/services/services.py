@@ -27,8 +27,8 @@ class ReviewService:
             self.supabase = get_supabase_client()
             logger.info("Supabase client initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize Supabase client: {str(e)}")
-            self.supabase = None
+            logger.error(f"Failed to initialize Supabase client: {str(e)}", exc_info=True)
+            raise Exception(f"Database connection failed: {str(e)}")
         
         # Initialize Gemini API
         gemini_api_key = os.getenv("GEMINI_API_KEY")
@@ -38,7 +38,7 @@ class ReviewService:
                 self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
                 logger.info("Gemini API initialized successfully")
             except Exception as e:
-                logger.error(f"Failed to initialize Gemini API: {str(e)}")
+                logger.error(f"Failed to initialize Gemini API: {str(e)}", exc_info=True)
                 self.gemini_model = None
         else:
             logger.warning("GEMINI_API_KEY not set in environment variables")
@@ -66,7 +66,7 @@ class ReviewService:
         try:
             response = self.supabase.table("reviews").insert(review_dict).execute()
         except Exception as e:
-            logger.error(f"Failed to insert review: {str(e)}")
+            logger.error(f"Failed to insert review: {str(e)}", exc_info=True)
             raise Exception(f"Database error: {str(e)}")
         
         if response.data:
@@ -117,7 +117,7 @@ class ReviewService:
                     
                     return review
                 except Exception as fallback_error:
-                    logger.error(f"Fallback parsing also failed: {str(fallback_error)}")
+                    logger.error(f"Fallback parsing also failed: {str(fallback_error)}", exc_info=True)
                     raise Exception(f"Failed to parse review data: {str(e)}")
         else:
             raise Exception("Failed to create review")
