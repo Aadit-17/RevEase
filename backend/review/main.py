@@ -1,10 +1,16 @@
+import sys
+import os
+
+# Add the parent directory to the Python path to allow imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from uuid import UUID
-from services import models
-from services import services
-from services import Config
+from services.models import ReviewCreate, Review
+from services.services import ReviewService
+from services.config import Config
 
 app = FastAPI(title="Reviews Copilot API")
 
@@ -28,7 +34,7 @@ app.add_middleware(
 # Initialize services
 @app.on_event("startup")
 async def startup_event():
-    app.state.review_service = services.ReviewService()
+    app.state.review_service = ReviewService()
 
 @app.get("/health")
 async def health_check():
@@ -37,7 +43,7 @@ async def health_check():
 
 @app.post("/ingest")
 async def ingest_reviews(
-    reviews: List[models.ReviewCreate],
+    reviews: List[ReviewCreate],
     x_session_id: str = Header(..., alias="X-Session-Id")
 ):
     """Ingest reviews with session_id"""

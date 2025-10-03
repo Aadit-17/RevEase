@@ -11,8 +11,9 @@ def check_env_vars():
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
-        # WARNING: SUPABASE_URL and/or SUPABASE_KEY not set in environment variables!
-        # Please set these values in your .env file for the application to work properly.
+        # Log warning but don't fail - Vercel might set these at runtime
+        print(f"WARNING: {', '.join(missing_vars)} not set in environment variables!")
+        print("Please set these values in your Vercel environment variables for the application to work properly.")
         return False
     return True
 
@@ -21,4 +22,4 @@ if __name__ == "__main__":
     check_env_vars()
     
     # Run the FastAPI application
-    uvicorn.run("review.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("review.main:app", host="0.0.0.0", port=8000, reload=False)
