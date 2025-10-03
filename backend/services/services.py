@@ -1,6 +1,7 @@
 import os
 import asyncio
 import time
+import logging
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime, timedelta
@@ -15,21 +16,39 @@ load_dotenv()
 from services.models import ReviewCreate, Review
 from services.database import get_supabase_client
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 class ReviewService:
     def __init__(self):
         # Initialize Supabase client
-        self.supabase = get_supabase_client()
+        try:
+            self.supabase = get_supabase_client()
+            logger.info("Supabase client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Supabase client: {str(e)}")
+            self.supabase = None
         
         # Initialize Gemini API
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         if gemini_api_key:
-            genai.configure(api_key=gemini_api_key)
-            self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+            try:
+                genai.configure(api_key=gemini_api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+                logger.info("Gemini API initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Gemini API: {str(e)}")
+                self.gemini_model = None
         else:
+            logger.warning("GEMINI_API_KEY not set in environment variables")
             self.gemini_model = None
     
     async def create_review(self, review_data: ReviewCreate) -> Review:
         """Create a new review"""
+        if not self.supabase:
+            raise Exception("Database connection not available")
+            
         review_dict = json.loads(review_data.json())
         
         review_dict['date'] = review_data.date.isoformat()
@@ -47,7 +66,8 @@ class ReviewService:
         try:
             response = self.supabase.table("reviews").insert(review_dict).execute()
         except Exception as e:
-            raise e
+            logger.error(f"Failed to insert review: {str(e)}")
+            raise Exception(f"Database error: {str(e)}")
         
         if response.data:
             try:
@@ -64,7 +84,9 @@ class ReviewService:
 
                 review = Review(**data)
                 
-                asyncio.create_task(self._async_generate_ai_analysis(review))
+                # Run AI analysis in background
+                if self.gemini_model:
+                    asyncio.create_task(self._async_generate_ai_analysis(review))
                 
                 return review
             except Exception as e:
@@ -89,12 +111,14 @@ class ReviewService:
                         created_at=self._parse_datetime(data['created_at']) if data.get('created_at') else None
                     )
                     
-                    asyncio.create_task(self._async_generate_ai_analysis(review))
+                    # Run AI analysis in background
+                    if self.gemini_model:
+                        asyncio.create_task(self._async_generate_ai_analysis(review))
                     
                     return review
                 except Exception as fallback_error:
-                    # Fallback parsing also failed
-                    raise Exception(f"Failed to parse review data: {e}")
+                    logger.error(f"Fallback parsing also failed: {str(fallback_error)}")
+                    raise Exception(f"Failed to parse review data: {str(e)}")
         else:
             raise Exception("Failed to create review")
     

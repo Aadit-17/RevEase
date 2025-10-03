@@ -1,11 +1,17 @@
 import sys
 import os
+import logging
 
 # Add the parent directory to the Python path to allow imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from typing import Optional, List
 from uuid import UUID
 from services.models import ReviewCreate, Review
@@ -15,26 +21,42 @@ from services.config import Config
 app = FastAPI(title="Reviews Copilot API")
 
 # Add CORS middleware for cloud deployment
-allowed_origins = Config.FRONTEND_ORIGIN
-origins = [
-    allowed_origins,
+allowed_origins = [Config.FRONTEND_ORIGIN] if Config.FRONTEND_ORIGIN else []
+# Add common development origins
+allowed_origins.extend([
     "http://localhost:5173",
-    "http://localhost:3000"
-]
+    "http://localhost:3000",
+    "https://reviewscopilot.onrender.com",
+    "https://reviews-copilot-frontend.onrender.com"
+])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["X-Session-Id"]
 )
 
+# Global error handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.error(f"Global exception handler caught: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"}
+    )
+
 # Initialize services
 @app.on_event("startup")
 async def startup_event():
-    app.state.review_service = ReviewService()
+    try:
+        app.state.review_service = ReviewService()
+        logger.info("Review service initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize review service: {str(e)}")
+        # We'll handle this in the endpoints
 
 @app.get("/health")
 async def health_check():
@@ -48,6 +70,10 @@ async def ingest_reviews(
 ):
     """Ingest reviews with session_id"""
     try:
+        # Check if service is available
+        if not hasattr(app.state, 'review_service') or not app.state.review_service:
+            raise HTTPException(status_code=503, detail="Service not available")
+            
         session_id = UUID(x_session_id)
         created_reviews = []
         
@@ -64,8 +90,12 @@ async def ingest_reviews(
             created_reviews.append(review)
         
         return created_reviews
-    except ValueError:
+    except ValueError as e:
+        logger.error(f"Value error in ingest_reviews: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid session ID format")
+    except Exception as e:
+        logger.error(f"Error in ingest_reviews: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/reviews")
 async def list_reviews(
