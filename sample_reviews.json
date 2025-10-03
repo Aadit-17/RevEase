@@ -1,0 +1,37 @@
+[
+    {
+        "location": "Downtown Branch",
+        "rating": 5,
+        "text": "Exceptional service and staff were incredibly helpful. The facility was spotless and the atmosphere was very welcoming. I would definitely recommend this location to others.",
+        "date": "2025-10-02T14:30:00Z",
+        "topic": "service"
+    },
+    {
+        "location": "Mall Location",
+        "rating": 2,
+        "text": "Very disappointed with the cleanliness of the establishment. Tables were dirty and the floor had not been mopped. Staff seemed overwhelmed and service was slow.",
+        "date": "2025-10-01T12:15:00Z",
+        "topic": "cleanliness"
+    },
+    {
+        "location": "Airport Terminal",
+        "rating": 4,
+        "text": "Good overall experience. Prices are reasonable and the location is convenient. Service could be faster during peak hours but staff was friendly.",
+        "date": "2025-09-30T18:45:00Z",
+        "topic": "price"
+    },
+    {
+        "location": "Westside Plaza",
+        "rating": 3,
+        "text": "Average experience. Nothing particularly good or bad to report. The service was adequate and the facility was acceptable.",
+        "date": "2025-09-29T11:20:00Z",
+        "topic": "service"
+    },
+    {
+        "location": "Downtown Branch",
+        "rating": 1,
+        "text": "Terrible experience. Overpriced for what you get and the staff was rude. Would not return and will tell others to avoid this location.",
+        "date": "2025-09-28T16:10:00Z",
+        "topic": "price"
+    }
+]
