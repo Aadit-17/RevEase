@@ -1,19 +1,14 @@
 {
     "builds": [
         {
-            "src": "start.py",
+            "src": "review/main.py",
             "use": "@vercel/python"
         }
     ],
     "routes": [
         {
             "src": "/(.*)",
-            "dest": "start.py"
+            "dest": "review/main.py"
         }
-    ],
-    "env": {
-        "SUPABASE_URL": "@supabase_url",
-        "SUPABASE_KEY": "@supabase_key",
-        "GEMINI_API_KEY": "@gemini_api_key"
-    }
+    ]
 }
