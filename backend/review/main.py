@@ -170,3 +170,7 @@ def redact_sensitive_info(text: str) -> str:
         text = re.sub(pattern, '[PHONE REDACTED]', text)
     
     return text
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
