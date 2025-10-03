@@ -55,6 +55,38 @@ app.add_middleware(
     expose_headers=["X-Session-Id"]
 )
 
+# Debug endpoint to check environment variables on Vercel
+@app.get("/debug-env")
+async def debug_environment():
+    """Debug endpoint to check environment variables and paths on Vercel"""
+    logger.info("Debug environment endpoint called")
+    
+    debug_info = {
+        "python": {
+            "version": sys.version,
+            "path": sys.path
+        },
+        "os": {
+            "cwd": os.getcwd(),
+            "platform": os.name
+        },
+        "env_vars": {}
+    }
+    
+    # Log all environment variables (masked for sensitive ones)
+    for key, value in os.environ.items():
+        if any(keyword in key.upper() for keyword in ['SUPABASE', 'GEMINI', 'PORT', 'DATABASE']):
+            # Mask sensitive values
+            if 'KEY' in key.upper() or 'SECRET' in key.upper() or 'URL' in key.upper():
+                debug_info["env_vars"][key] = f"{value[:10]}...{value[-5:] if len(value) > 15 else '***'}"
+            else:
+                debug_info["env_vars"][key] = value
+        elif key in ['PATH', 'PYTHONPATH']:
+            debug_info["env_vars"][key] = value
+    
+    logger.info(f"Debug environment info: {debug_info}")
+    return debug_info
+
 # Global error handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
@@ -71,8 +103,18 @@ async def startup_event():
     try:
         logger.info("Initializing review service...")
         app.state.review_service = ReviewService()
-        logger.info("Review service initialized successfully")
-        app.state.service_error = None
+        # Check if service is properly initialized
+        if hasattr(app.state, 'review_service') and app.state.review_service is not None:
+            if hasattr(app.state.review_service, 'database_available') and app.state.review_service.database_available:
+                logger.info("Review service initialized successfully with database connection")
+                app.state.service_error = None
+            else:
+                error_msg = getattr(app.state.review_service, 'init_error', 'Unknown database connection error')
+                logger.error(f"Review service initialized but database connection failed: {error_msg}")
+                app.state.service_error = error_msg
+        else:
+            logger.error("Review service initialization failed")
+            app.state.service_error = "Service initialization failed"
     except Exception as e:
         logger.error(f"Failed to initialize review service: {str(e)}", exc_info=True)
         # Set a None service so we can check for it in endpoints
@@ -84,28 +126,43 @@ async def startup_event():
 async def health_check():
     """Health check endpoint"""
     logger.info("Health check endpoint called")
-    service_status = "healthy" if hasattr(app.state, 'review_service') and app.state.review_service is not None else "unhealthy"
+    service_status = "healthy" if hasattr(app.state, 'review_service') and app.state.review_service is not None and getattr(app.state.review_service, 'database_available', False) else "unhealthy"
     
     details = {}
     if hasattr(app.state, 'service_error'):
         details["service_error"] = app.state.service_error
     
-    logger.info(f"Health check response: status=healthy, service={service_status}")
+    # Add more detailed information
+    if hasattr(app.state, 'review_service') and app.state.review_service is not None:
+        details["database_available"] = getattr(app.state.review_service, 'database_available', False)
+        details["gemini_available"] = getattr(app.state.review_service, 'gemini_available', False)
+        if hasattr(app.state.review_service, 'init_error'):
+            details["init_error"] = app.state.review_service.init_error
+    
+    logger.info(f"Health check response: status=healthy, service={service_status}, details={details}")
     return {"status": "healthy", "service": service_status, "details": details}
 
 # Middleware to check service availability (but allow docs to work)
 @app.middleware("http")
 async def check_service_availability(request, call_next):
     # Skip service check for health, docs, and openapi endpoints
-    skip_paths = ["/health", "/docs", "/redoc", "/openapi.json"]
+    skip_paths = ["/health", "/docs", "/redoc", "/openapi.json", "/debug-env"]
     if not any(request.url.path.startswith(path) for path in skip_paths):
         logger.info(f"Checking service availability for path: {request.url.path}")
         if not hasattr(app.state, 'review_service') or app.state.review_service is None:
-            error_msg = f"Service not available - database connection failed: {getattr(app.state, 'service_error', 'Unknown error')}"
+            error_msg = f"Service not available - service not initialized: {getattr(app.state, 'service_error', 'Unknown error')}"
             logger.error(error_msg)
             return JSONResponse(
                 status_code=503,
-                content={"detail": "Service not available - database connection failed", "service_error": getattr(app.state, 'service_error', 'Unknown error')}
+                content={"detail": "Service not available - service not initialized", "service_error": getattr(app.state, 'service_error', 'Unknown error')}
+            )
+        # Check if database is available
+        elif not getattr(app.state.review_service, 'database_available', False):
+            error_msg = f"Service not available - database connection failed: {getattr(app.state.review_service, 'init_error', 'Unknown error')}"
+            logger.error(error_msg)
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Service not available - database connection failed", "service_error": getattr(app.state.review_service, 'init_error', 'Unknown error')}
             )
     response = await call_next(request)
     return response
@@ -113,6 +170,8 @@ async def check_service_availability(request, call_next):
 def get_review_service():
     """Helper function to get review service with proper error handling"""
     if not hasattr(app.state, 'review_service') or app.state.review_service is None:
+        raise HTTPException(status_code=503, detail="Service not available - service not initialized")
+    if not getattr(app.state.review_service, 'database_available', False):
         raise HTTPException(status_code=503, detail="Service not available - database connection failed")
     return app.state.review_service
 

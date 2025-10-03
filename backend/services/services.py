@@ -28,18 +28,35 @@ logger.info(f"Environment variables check - SUPABASE_KEY present: {'SUPABASE_KEY
 logger.info(f"Environment variables check - GEMINI_API_KEY present: {'GEMINI_API_KEY' in os.environ}")
 
 from services.models import ReviewCreate, Review
-from services.database import get_supabase_client
+from services.database import get_supabase_client, test_connection
 
 logger.info("Imported models and database module")
 
 class ReviewService:
     def __init__(self):
         logger.info("Initializing ReviewService...")
+        self.supabase = None
+        self.database_available = False
+        self.init_error = None
+        self.gemini_model = None
+        self.gemini_available = False
+        self.gemini_error = None
+        
         # Initialize Supabase client
         try:
             logger.info("Attempting to initialize Supabase client...")
             self.supabase = get_supabase_client()
             logger.info("Supabase client initialized successfully")
+            
+            # Test the connection
+            logger.info("Testing database connection...")
+            if test_connection(self.supabase):
+                self.database_available = True
+                logger.info("Database connection test successful")
+            else:
+                self.database_available = False
+                self.init_error = "Database connection test failed"
+                logger.error("Database connection test failed")
         except Exception as e:
             logger.error(f"Failed to initialize Supabase client: {str(e)}", exc_info=True)
             self.supabase = None
@@ -54,27 +71,8 @@ class ReviewService:
                 logger.info("Attempting to initialize Gemini API...")
                 genai.configure(api_key=gemini_api_key)
                 self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
-                logger.info("Gemini API initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize Gemini API: {str(e)}", exc_info=True)
-                self.gemini_model = None
-        else:
-            logger.warning("GEMINI_API_KEY not set in environment variables")
-            self.gemini_model = None
-    
-    def _check_database_available(self):
-        """Check if database is available and raise exception if not"""
-        if not self.database_available:
-            raise Exception(f"Database connection failed: {str(e)}")
-        
-        # Initialize Gemini API
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if gemini_api_key:
-            try:
-                genai.configure(api_key=gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
-                logger.info("Gemini API initialized successfully")
                 self.gemini_available = True
+                logger.info("Gemini API initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini API: {str(e)}", exc_info=True)
                 self.gemini_model = None
@@ -89,7 +87,9 @@ class ReviewService:
     def _check_database_available(self):
         """Check if database is available and raise exception if not"""
         if not self.database_available:
-            raise Exception(f"Database connection failed: {str(e)}")
+            error_msg = f"Database connection failed: {self.init_error or 'Unknown error'}"
+            logger.error(f"Database unavailable: {error_msg}")
+            raise Exception(error_msg)
     
     async def create_review(self, review_data: ReviewCreate) -> Review:
         """Create a new review"""
@@ -214,6 +214,8 @@ class ReviewService:
         page_size: int = 10
     ) -> Dict[str, Any]:
         """List reviews with filters and pagination"""
+        self._check_database_available()
+        
         try:
             # Build query
             query = self.supabase.table("reviews").select("*").eq("session_id", str(session_id))
@@ -242,7 +244,8 @@ class ReviewService:
             # Execute query
             response = query.execute()
         except Exception as e:
-            raise e
+            logger.error(f"Failed to list reviews: {str(e)}", exc_info=True)
+            raise Exception(f"Database error: {str(e)}")
         
         # Convert to Review models
         reviews = []
@@ -264,6 +267,7 @@ class ReviewService:
                     reviews.append(Review(**review_data))
                 except Exception as e:
                     # Error parsing review data
+                    logger.error(f"Error parsing review data: {str(e)}", exc_info=True)
                     continue
         
         return {
@@ -276,11 +280,14 @@ class ReviewService:
     
     async def get_review(self, review_id: int, session_id: UUID) -> Optional[Review]:
         """Get a specific review by ID"""
+        self._check_database_available()
+        
         try:
             response = self.supabase.table("reviews").select("*").eq("id", review_id).eq("session_id", str(session_id)).execute()
         except Exception as e:
             # Supabase query error
-            raise e
+            logger.error(f"Failed to get review: {str(e)}", exc_info=True)
+            raise Exception(f"Database error: {str(e)}")
         
         if response.data and len(response.data) > 0:
             try:
@@ -299,6 +306,7 @@ class ReviewService:
                 
                 return Review(**review_data)
             except Exception as e:
+                logger.error(f"Error parsing review data: {str(e)}", exc_info=True)
                 return None
         return None
     
@@ -314,6 +322,7 @@ class ReviewService:
                 }
                 self.supabase.table("reviews").update(update_data).eq("id", review.id).execute()
         except Exception as ai_error:
+            logger.error(f"Error in async AI analysis: {str(ai_error)}", exc_info=True)
             pass
 
     async def generate_ai_analysis(self, review: Review) -> Dict[str, Any]:
@@ -359,6 +368,7 @@ class ReviewService:
                 # Fallback response
                 return self._get_rating_based_analysis(review)
         except Exception as e:
+            logger.error(f"Error in AI analysis: {str(e)}", exc_info=True)
             # Fallback to rating-based sentiment on any API error
             return self._get_rating_based_analysis(review)
     
@@ -424,6 +434,7 @@ class ReviewService:
                 return self._get_template_based_reply(review)
         except Exception as e:
             error_msg = f"Error generating AI response: {str(e)}"
+            logger.error(error_msg, exc_info=True)
             # Fallback to template-based reply on any API error
             return self._get_template_based_reply(review)
     
@@ -451,16 +462,20 @@ class ReviewService:
             self.supabase.table("reviews").update(update_data).eq("id", review_id).execute()
         except Exception as e:
             # Error updating reply in database
+            logger.error(f"Error saving reply to database: {str(e)}", exc_info=True)
             pass
     
     async def get_analytics(self, session_id: UUID) -> Dict[str, Any]:
         """Get analytics for reviews"""
+        self._check_database_available()
+        
         try:
             # Get all reviews for this session
             response = self.supabase.table("reviews").select("*").eq("session_id", str(session_id)).execute()
         except Exception as e:
             # Supabase query error
-            raise e
+            logger.error(f"Failed to get analytics: {str(e)}", exc_info=True)
+            raise Exception(f"Database error: {str(e)}")
         
         reviews_data = response.data if response.data else []
         
@@ -482,6 +497,7 @@ class ReviewService:
                 reviews.append(review_data)
             except Exception as e:
                 # Error parsing review data
+                logger.error(f"Error parsing review data in analytics: {str(e)}", exc_info=True)
                 continue
         
         # Calculate sentiment distribution
@@ -508,12 +524,15 @@ class ReviewService:
     
     async def search_reviews(self, session_id: UUID, query: str) -> List[Review]:
         """Search reviews using TF-IDF and cosine similarity"""
+        self._check_database_available()
+        
         try:
             # Get all reviews for this session
             response = self.supabase.table("reviews").select("*").eq("session_id", str(session_id)).execute()
         except Exception as e:
             # Supabase query error
-            raise e
+            logger.error(f"Failed to search reviews: {str(e)}", exc_info=True)
+            raise Exception(f"Database error: {str(e)}")
         
         reviews_data = response.data if response.data else []
         
@@ -535,6 +554,7 @@ class ReviewService:
                 reviews.append(Review(**review_data))
             except Exception as e:
                 # Error parsing review data
+                logger.error(f"Error parsing review data in search: {str(e)}", exc_info=True)
                 continue
         
         if not reviews:
