@@ -1,15 +1,15 @@
 from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
-import os
 from uuid import UUID
-from services.models import ReviewCreate, Review
-from services.services import ReviewService
+from services import models
+from services import services
+from services import Config
 
 app = FastAPI(title="Reviews Copilot API")
 
 # Add CORS middleware for cloud deployment
-allowed_origins = os.getenv("FRONTEND_URL", "http://localhost:5173")
+allowed_origins = Config.FRONTEND_ORIGIN
 origins = [
     allowed_origins,
     "http://localhost:5173",
@@ -28,7 +28,7 @@ app.add_middleware(
 # Initialize services
 @app.on_event("startup")
 async def startup_event():
-    app.state.review_service = ReviewService()
+    app.state.review_service = services.ReviewService()
 
 @app.get("/health")
 async def health_check():
@@ -37,7 +37,7 @@ async def health_check():
 
 @app.post("/ingest")
 async def ingest_reviews(
-    reviews: List[ReviewCreate],
+    reviews: List[models.ReviewCreate],
     x_session_id: str = Header(..., alias="X-Session-Id")
 ):
     """Ingest reviews with session_id"""

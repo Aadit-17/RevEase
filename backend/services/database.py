@@ -1,6 +1,9 @@
 import os
 from supabase import create_client, Client
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")

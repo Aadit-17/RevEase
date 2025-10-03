@@ -8,6 +8,9 @@ import google.generativeai as genai
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from services.models import ReviewCreate, Review
 from services.database import get_supabase_client
