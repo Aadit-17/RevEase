@@ -5,9 +5,18 @@ import logging
 # Add the parent directory to the Python path to allow imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging with more detail
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Log environment variables (without exposing secrets)
+logger.info("Starting application initialization...")
+logger.info(f"Python path: {sys.path}")
+logger.info(f"Current working directory: {os.getcwd()}")
+logger.info(f"Environment variables present: SUPABASE_URL={'SUPABASE_URL' in os.environ}, SUPABASE_KEY={'SUPABASE_KEY' in os.environ}, GEMINI_API_KEY={'GEMINI_API_KEY' in os.environ}")
 
 from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +27,12 @@ from services.models import ReviewCreate, Review
 from services.services import ReviewService
 from services.config import Config
 
+logger.info("Imported all modules successfully")
+
 app = FastAPI(title="Reviews Copilot API")
+
+# Log CORS configuration
+logger.info(f"Config.FRONTEND_ORIGIN: {Config.FRONTEND_ORIGIN}")
 
 # Add CORS middleware for cloud deployment
 allowed_origins = [Config.FRONTEND_ORIGIN] if Config.FRONTEND_ORIGIN else []
@@ -29,6 +43,8 @@ allowed_origins.extend([
     "https://reviewscopilot.onrender.com",
     "https://reviews-copilot-frontend.onrender.com"
 ])
+
+logger.info(f"Allowed origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,49 +67,48 @@ async def global_exception_handler(request, exc):
 # Initialize services
 @app.on_event("startup")
 async def startup_event():
+    logger.info("Starting up application...")
     try:
         logger.info("Initializing review service...")
         app.state.review_service = ReviewService()
         logger.info("Review service initialized successfully")
+        app.state.service_error = None
     except Exception as e:
         logger.error(f"Failed to initialize review service: {str(e)}", exc_info=True)
         # Set a None service so we can check for it in endpoints
         app.state.review_service = None
-
-# Middleware to check service availability
-@app.middleware("http")
-async def check_service_availability(request, call_next):
-    # Skip service check for health endpoint
-    if request.url.path != "/health":
-        if not hasattr(app.state, 'review_service') or app.state.review_service is None:
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "Service not available - database connection failed"}
-            )
-    response = await call_next(request)
-    return response
+        app.state.service_error = str(e)
+        logger.error("Review service initialization failed, continuing with app startup...")
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    logger.info("Health check endpoint called")
     service_status = "healthy" if hasattr(app.state, 'review_service') and app.state.review_service is not None else "unhealthy"
     
-    # Try to get more detailed status
     details = {}
-    if hasattr(app.state, 'review_service') and app.state.review_service is not None:
-        try:
-            # Test database connection
-            supabase = app.state.review_service.supabase
-            if supabase:
-                # Try a simple query to test connection
-                result = supabase.table("reviews").select("id").limit(1).execute()
-                details["database"] = "connected"
-            else:
-                details["database"] = "not initialized"
-        except Exception as e:
-            details["database"] = f"error: {str(e)}"
+    if hasattr(app.state, 'service_error'):
+        details["service_error"] = app.state.service_error
     
+    logger.info(f"Health check response: status=healthy, service={service_status}")
     return {"status": "healthy", "service": service_status, "details": details}
+
+# Middleware to check service availability (but allow docs to work)
+@app.middleware("http")
+async def check_service_availability(request, call_next):
+    # Skip service check for health, docs, and openapi endpoints
+    skip_paths = ["/health", "/docs", "/redoc", "/openapi.json"]
+    if not any(request.url.path.startswith(path) for path in skip_paths):
+        logger.info(f"Checking service availability for path: {request.url.path}")
+        if not hasattr(app.state, 'review_service') or app.state.review_service is None:
+            error_msg = f"Service not available - database connection failed: {getattr(app.state, 'service_error', 'Unknown error')}"
+            logger.error(error_msg)
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Service not available - database connection failed", "service_error": getattr(app.state, 'service_error', 'Unknown error')}
+            )
+    response = await call_next(request)
+    return response
 
 def get_review_service():
     """Helper function to get review service with proper error handling"""

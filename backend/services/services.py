@@ -11,29 +11,47 @@ from sklearn.metrics.pairwise import cosine_similarity
 import json
 from dotenv import load_dotenv
 
+# Set up logging with more detail
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+logger.info("Loading dotenv...")
 load_dotenv()
+logger.info("Dotenv loaded")
+
+# Log environment variables (without exposing secrets)
+logger.info(f"Environment variables check - SUPABASE_URL present: {'SUPABASE_URL' in os.environ}")
+logger.info(f"Environment variables check - SUPABASE_KEY present: {'SUPABASE_KEY' in os.environ}")
+logger.info(f"Environment variables check - GEMINI_API_KEY present: {'GEMINI_API_KEY' in os.environ}")
 
 from services.models import ReviewCreate, Review
 from services.database import get_supabase_client
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger.info("Imported models and database module")
 
 class ReviewService:
     def __init__(self):
+        logger.info("Initializing ReviewService...")
         # Initialize Supabase client
         try:
+            logger.info("Attempting to initialize Supabase client...")
             self.supabase = get_supabase_client()
             logger.info("Supabase client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Supabase client: {str(e)}", exc_info=True)
-            raise Exception(f"Database connection failed: {str(e)}")
+            self.supabase = None
+            self.database_available = False
+            self.init_error = str(e)
         
         # Initialize Gemini API
         gemini_api_key = os.getenv("GEMINI_API_KEY")
+        logger.info(f"Gemini API key present: {bool(gemini_api_key)}")
         if gemini_api_key:
             try:
+                logger.info("Attempting to initialize Gemini API...")
                 genai.configure(api_key=gemini_api_key)
                 self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
                 logger.info("Gemini API initialized successfully")
@@ -44,10 +62,38 @@ class ReviewService:
             logger.warning("GEMINI_API_KEY not set in environment variables")
             self.gemini_model = None
     
+    def _check_database_available(self):
+        """Check if database is available and raise exception if not"""
+        if not self.database_available:
+            raise Exception(f"Database connection failed: {str(e)}")
+        
+        # Initialize Gemini API
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if gemini_api_key:
+            try:
+                genai.configure(api_key=gemini_api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+                logger.info("Gemini API initialized successfully")
+                self.gemini_available = True
+            except Exception as e:
+                logger.error(f"Failed to initialize Gemini API: {str(e)}", exc_info=True)
+                self.gemini_model = None
+                self.gemini_available = False
+                self.gemini_error = str(e)
+        else:
+            logger.warning("GEMINI_API_KEY not set in environment variables")
+            self.gemini_model = None
+            self.gemini_available = False
+            self.gemini_error = "GEMINI_API_KEY not set"
+    
+    def _check_database_available(self):
+        """Check if database is available and raise exception if not"""
+        if not self.database_available:
+            raise Exception(f"Database connection failed: {str(e)}")
+    
     async def create_review(self, review_data: ReviewCreate) -> Review:
         """Create a new review"""
-        if not self.supabase:
-            raise Exception("Database connection not available")
+        self._check_database_available()
             
         review_dict = json.loads(review_data.json())
         
