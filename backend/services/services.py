@@ -27,10 +27,12 @@ logger.info(f"Environment variables check - SUPABASE_URL present: {'SUPABASE_URL
 logger.info(f"Environment variables check - SUPABASE_KEY present: {'SUPABASE_KEY' in os.environ}")
 logger.info(f"Environment variables check - GEMINI_API_KEY present: {'GEMINI_API_KEY' in os.environ}")
 
-from services.models import ReviewCreate, Review
-from services.database import get_supabase_client, test_connection
+# Defer imports to avoid import-time initialization
+# Import these inside the class or methods as needed
+# from services.models import ReviewCreate, Review
+# from services.database import get_supabase_client, test_connection
 
-logger.info("Imported models and database module")
+logger.info("Services module loaded (imports deferred)")
 
 class ReviewService:
     def __init__(self):
@@ -45,12 +47,16 @@ class ReviewService:
         # Initialize Supabase client
         try:
             logger.info("Attempting to initialize Supabase client...")
+            # Import here to avoid import-time initialization
+            from services.database import get_supabase_client, test_connection
             self.supabase = get_supabase_client()
             logger.info("Supabase client initialized successfully")
             
             # Test the connection
             logger.info("Testing database connection...")
-            if test_connection(self.supabase):
+            connection_test_result = test_connection(self.supabase)
+            logger.info(f"Connection test result: {connection_test_result}")
+            if connection_test_result:
                 self.database_available = True
                 logger.info("Database connection test successful")
             else:
@@ -94,7 +100,10 @@ class ReviewService:
     async def create_review(self, review_data: ReviewCreate) -> Review:
         """Create a new review"""
         self._check_database_available()
-            
+        
+        # Import models here to avoid import-time initialization
+        from services.models import Review
+        
         review_dict = json.loads(review_data.json())
         
         review_dict['date'] = review_data.date.isoformat()
@@ -248,6 +257,7 @@ class ReviewService:
             raise Exception(f"Database error: {str(e)}")
         
         # Convert to Review models
+        from services.models import Review
         reviews = []
         if response.data:
             for review_data in response.data:
@@ -281,6 +291,8 @@ class ReviewService:
     async def get_review(self, review_id: int, session_id: UUID) -> Optional[Review]:
         """Get a specific review by ID"""
         self._check_database_available()
+        
+        from services.models import Review
         
         try:
             response = self.supabase.table("reviews").select("*").eq("id", review_id).eq("session_id", str(session_id)).execute()
@@ -525,6 +537,8 @@ class ReviewService:
     async def search_reviews(self, session_id: UUID, query: str) -> List[Review]:
         """Search reviews using TF-IDF and cosine similarity"""
         self._check_database_available()
+        
+        from services.models import Review
         
         try:
             # Get all reviews for this session

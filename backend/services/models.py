@@ -11,7 +11,7 @@ class ReviewBase(BaseModel):
     topic: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         json_encoders = {
             datetime: lambda v: v.isoformat(),
             UUID: lambda v: str(v)
@@ -29,7 +29,7 @@ class Review(ReviewBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         json_encoders = {
             datetime: lambda v: v.isoformat(),
             UUID: lambda v: str(v)

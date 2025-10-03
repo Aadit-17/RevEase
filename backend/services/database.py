@@ -1,7 +1,6 @@
 import os
 from supabase import create_client, Client
 from typing import Optional
-from dotenv import load_dotenv
 import logging
 
 # Set up logging with more detail
@@ -11,30 +10,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-logger.info("Starting database module initialization...")
-logger.info("Loading dotenv...")
-load_dotenv()
-logger.info("Dotenv loaded")
+# Defer dotenv loading and environment variable checking
+# These will be done when the functions are actually called
 
-# Supabase configuration
-logger.info("Checking Supabase environment variables...")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-
-logger.info(f"SUPABASE_URL present: {bool(SUPABASE_URL)}")
-logger.info(f"SUPABASE_KEY present: {bool(SUPABASE_KEY)}")
-
-# Mask the values for logging
-masked_url = SUPABASE_URL[:20] + "..." if SUPABASE_URL else ""
-masked_key = SUPABASE_KEY[:10] + "..." if SUPABASE_KEY else ""
-logger.info(f"SUPABASE_URL (masked): {masked_url}")
-logger.info(f"SUPABASE_KEY (masked): {masked_key}")
+logger.info("Database module loaded (initialization deferred)")
 
 # Global variable to hold the client
 _supabase_client: Optional[Client] = None
 
 def get_supabase_client() -> Client:
-    """Get Supabase client instance"""
+    """Get Supabase client instance - lazy initialization"""
     global _supabase_client
     logger.info("get_supabase_client called")
     
@@ -43,6 +28,26 @@ def get_supabase_client() -> Client:
         logger.info("Returning cached Supabase client")
         return _supabase_client
     
+    # Load environment variables when actually needed
+    from dotenv import load_dotenv
+    logger.info("Loading dotenv...")
+    load_dotenv()
+    logger.info("Dotenv loaded")
+    
+    # Supabase configuration
+    logger.info("Checking Supabase environment variables...")
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+    logger.info(f"SUPABASE_URL present: {bool(SUPABASE_URL)}")
+    logger.info(f"SUPABASE_KEY present: {bool(SUPABASE_KEY)}")
+
+    # Mask the values for logging
+    masked_url = SUPABASE_URL[:20] + "..." if SUPABASE_URL else ""
+    masked_key = SUPABASE_KEY[:10] + "..." if SUPABASE_KEY else ""
+    logger.info(f"SUPABASE_URL (masked): {masked_url}")
+    logger.info(f"SUPABASE_KEY (masked): {masked_key}")
+
     # Validate configuration
     if not SUPABASE_URL:
         logger.error("SUPABASE_URL not set in environment variables!")
@@ -54,6 +59,7 @@ def get_supabase_client() -> Client:
     
     try:
         logger.info(f"Creating Supabase client for URL: {masked_url}...")
+        logger.info("Attempting to create Supabase client...")
         _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
         logger.info("Supabase client created successfully")
         return _supabase_client
@@ -63,8 +69,10 @@ def get_supabase_client() -> Client:
 
 def test_connection(supabase_client: Client = None) -> bool:
     """Test the Supabase connection"""
+    logger.info("test_connection called")
     if supabase_client is None:
         try:
+            logger.info("Getting Supabase client for testing...")
             supabase_client = get_supabase_client()
         except Exception as e:
             logger.error(f"Failed to get Supabase client for testing: {str(e)}", exc_info=True)

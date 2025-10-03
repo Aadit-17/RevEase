@@ -18,42 +18,14 @@ logger.info(f"Python path: {sys.path}")
 logger.info(f"Current working directory: {os.getcwd()}")
 logger.info(f"Environment variables present: SUPABASE_URL={'SUPABASE_URL' in os.environ}, SUPABASE_KEY={'SUPABASE_KEY' in os.environ}, GEMINI_API_KEY={'GEMINI_API_KEY' in os.environ}")
 
-from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, BackgroundTasks, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Optional, List
 from uuid import UUID
-from services.models import ReviewCreate, Review
-from services.services import ReviewService
-from services.config import Config
-
-logger.info("Imported all modules successfully")
+import asyncio
 
 app = FastAPI(title="Reviews Copilot API")
-
-# Log CORS configuration
-logger.info(f"Config.FRONTEND_ORIGIN: {Config.FRONTEND_ORIGIN}")
-
-# Add CORS middleware for cloud deployment
-allowed_origins = [Config.FRONTEND_ORIGIN] if Config.FRONTEND_ORIGIN else []
-# Add common development origins
-allowed_origins.extend([
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://reviewscopilot.onrender.com",
-    "https://reviews-copilot-frontend.onrender.com"
-])
-
-logger.info(f"Allowed origins: {allowed_origins}")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["X-Session-Id"]
-)
 
 # Debug endpoint to check environment variables on Vercel
 @app.get("/debug-env")
@@ -96,93 +68,113 @@ async def global_exception_handler(request, exc):
         content={"detail": "Internal server error"}
     )
 
-# Initialize services
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Starting up application...")
+# Lazy initialization of ReviewService
+async def get_review_service(request: Request):
+    """Lazy initialization of ReviewService - only create when first accessed"""
+    logger.info("get_review_service called")
+    
+    # Check if service already exists
+    if hasattr(request.app.state, "review_service"):
+        logger.info("Returning existing review service from app state")
+        return request.app.state.review_service
+    
+    # Initialize service if it doesn't exist
+    logger.info("Initializing new review service...")
     try:
-        logger.info("Initializing review service...")
-        app.state.review_service = ReviewService()
-        # Check if service is properly initialized
-        if hasattr(app.state, 'review_service') and app.state.review_service is not None:
-            if hasattr(app.state.review_service, 'database_available') and app.state.review_service.database_available:
-                logger.info("Review service initialized successfully with database connection")
-                app.state.service_error = None
-            else:
-                error_msg = getattr(app.state.review_service, 'init_error', 'Unknown database connection error')
-                logger.error(f"Review service initialized but database connection failed: {error_msg}")
-                app.state.service_error = error_msg
-        else:
-            logger.error("Review service initialization failed")
-            app.state.service_error = "Service initialization failed"
+        # Import here to avoid import-time initialization
+        from services.services import ReviewService
+        review_service = ReviewService()
+        request.app.state.review_service = review_service
+        request.app.state.service_error = None
+        logger.info("Review service initialized successfully")
+        return review_service
     except Exception as e:
         logger.error(f"Failed to initialize review service: {str(e)}", exc_info=True)
-        # Set a None service so we can check for it in endpoints
-        app.state.review_service = None
-        app.state.service_error = str(e)
-        logger.error("Review service initialization failed, continuing with app startup...")
+        request.app.state.service_error = str(e)
+        raise HTTPException(status_code=503, detail=f"Service not available: {str(e)}")
+
+# Initialize services (fallback for non-serverless environments)
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Startup event called")
+    # We'll still set up CORS here since it's needed regardless
+    pass
+
+# Set up CORS after we have access to Config
+@app.on_event("startup")
+async def setup_cors():
+    logger.info("Setting up CORS...")
+    try:
+        from services.config import Config
+        logger.info(f"Config.FRONTEND_ORIGIN: {Config.FRONTEND_ORIGIN}")
+        
+        # Add CORS middleware for cloud deployment
+        allowed_origins = [Config.FRONTEND_ORIGIN] if Config.FRONTEND_ORIGIN else []
+        # Add common development origins
+        allowed_origins.extend([
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "https://reviewscopilot.onrender.com",
+            "https://reviews-copilot-frontend.onrender.com"
+        ])
+        
+        logger.info(f"Allowed origins: {allowed_origins}")
+        
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["X-Session-Id"]
+        )
+    except Exception as e:
+        logger.error(f"Failed to set up CORS: {str(e)}", exc_info=True)
 
 @app.get("/health")
-async def health_check():
+async def health_check(request: Request):
     """Health check endpoint"""
     logger.info("Health check endpoint called")
-    service_status = "healthy" if hasattr(app.state, 'review_service') and app.state.review_service is not None and getattr(app.state.review_service, 'database_available', False) else "unhealthy"
     
-    details = {}
-    if hasattr(app.state, 'service_error'):
-        details["service_error"] = app.state.service_error
+    # Check if service exists
+    if hasattr(request.app.state, 'review_service'):
+        service = request.app.state.review_service
+        service_status = "healthy" if hasattr(service, 'database_available') and service.database_available else "unhealthy"
+        details = {
+            "database_available": getattr(service, 'database_available', False),
+            "gemini_available": getattr(service, 'gemini_available', False)
+        }
+        if hasattr(service, 'init_error'):
+            details["init_error"] = service.init_error
+    else:
+        service_status = "unhealthy"
+        details = {"service_initialized": False}
     
-    # Add more detailed information
-    if hasattr(app.state, 'review_service') and app.state.review_service is not None:
-        details["database_available"] = getattr(app.state.review_service, 'database_available', False)
-        details["gemini_available"] = getattr(app.state.review_service, 'gemini_available', False)
-        if hasattr(app.state.review_service, 'init_error'):
-            details["init_error"] = app.state.review_service.init_error
+    if hasattr(request.app.state, 'service_error'):
+        details["service_error"] = request.app.state.service_error
     
     logger.info(f"Health check response: status=healthy, service={service_status}, details={details}")
     return {"status": "healthy", "service": service_status, "details": details}
 
-# Middleware to check service availability (but allow docs to work)
-@app.middleware("http")
-async def check_service_availability(request, call_next):
-    # Skip service check for health, docs, and openapi endpoints
-    skip_paths = ["/health", "/docs", "/redoc", "/openapi.json", "/debug-env"]
-    if not any(request.url.path.startswith(path) for path in skip_paths):
-        logger.info(f"Checking service availability for path: {request.url.path}")
-        if not hasattr(app.state, 'review_service') or app.state.review_service is None:
-            error_msg = f"Service not available - service not initialized: {getattr(app.state, 'service_error', 'Unknown error')}"
-            logger.error(error_msg)
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "Service not available - service not initialized", "service_error": getattr(app.state, 'service_error', 'Unknown error')}
-            )
-        # Check if database is available
-        elif not getattr(app.state.review_service, 'database_available', False):
-            error_msg = f"Service not available - database connection failed: {getattr(app.state.review_service, 'init_error', 'Unknown error')}"
-            logger.error(error_msg)
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "Service not available - database connection failed", "service_error": getattr(app.state.review_service, 'init_error', 'Unknown error')}
-            )
-    response = await call_next(request)
-    return response
-
-def get_review_service():
-    """Helper function to get review service with proper error handling"""
-    if not hasattr(app.state, 'review_service') or app.state.review_service is None:
+def get_review_service_sync(request: Request):
+    """Helper function to get review service synchronously"""
+    if not hasattr(request.app.state, 'review_service') or request.app.state.review_service is None:
         raise HTTPException(status_code=503, detail="Service not available - service not initialized")
-    if not getattr(app.state.review_service, 'database_available', False):
+    service = request.app.state.review_service
+    if not getattr(service, 'database_available', False):
         raise HTTPException(status_code=503, detail="Service not available - database connection failed")
-    return app.state.review_service
+    return service
 
 @app.post("/ingest")
 async def ingest_reviews(
     reviews: List[ReviewCreate],
-    x_session_id: str = Header(..., alias="X-Session-Id")
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+    request: Request = None
 ):
     """Ingest reviews with session_id"""
     try:
-        review_service = get_review_service()
+        # Lazy initialize service
+        review_service = await get_review_service(request)
             
         session_id = UUID(x_session_id)
         created_reviews = []
@@ -218,11 +210,13 @@ async def list_reviews(
     q: Optional[str] = None,
     page: int = 1,
     page_size: int = 10,
-    x_session_id: str = Header(..., alias="X-Session-Id")
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+    request: Request = None
 ):
     """List reviews with filters and pagination"""
     try:
-        review_service = get_review_service()
+        # Lazy initialize service
+        review_service = await get_review_service(request)
         
         session_id = UUID(x_session_id)
         reviews = await review_service.list_reviews(
@@ -248,11 +242,13 @@ async def list_reviews(
 @app.get("/reviews/{review_id}")
 async def get_review(
     review_id: int,
-    x_session_id: str = Header(..., alias="X-Session-Id")
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+    request: Request = None
 ):
     """Get review by ID"""
     try:
-        review_service = get_review_service()
+        # Lazy initialize service
+        review_service = await get_review_service(request)
         
         session_id = UUID(x_session_id)
         review = await review_service.get_review(review_id, session_id)
@@ -273,11 +269,13 @@ async def get_review(
 async def suggest_reply(
     review_id: int,
     background_tasks: BackgroundTasks,
-    x_session_id: str = Header(..., alias="X-Session-Id")
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+    request: Request = None
 ):
     """Generate AI reply for a review"""
     try:
-        review_service = get_review_service()
+        # Lazy initialize service
+        review_service = await get_review_service(request)
         
         session_id = UUID(x_session_id)
         review = await review_service.get_review(review_id, session_id)
@@ -303,11 +301,13 @@ async def suggest_reply(
 
 @app.get("/analytics")
 async def get_analytics(
-    x_session_id: str = Header(..., alias="X-Session-Id")
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+    request: Request = None
 ):
     """Get analytics for reviews"""
     try:
-        review_service = get_review_service()
+        # Lazy initialize service
+        review_service = await get_review_service(request)
         
         session_id = UUID(x_session_id)
         analytics = await review_service.get_analytics(session_id)
@@ -325,11 +325,13 @@ async def get_analytics(
 @app.get("/search")
 async def search_reviews(
     q: str,
-    x_session_id: str = Header(..., alias="X-Session-Id")
+    x_session_id: str = Header(..., alias="X-Session-Id"),
+    request: Request = None
 ):
     """Search reviews using TF-IDF and cosine similarity"""
     try:
-        review_service = get_review_service()
+        # Lazy initialize service
+        review_service = await get_review_service(request)
         
         session_id = UUID(x_session_id)
         results = await review_service.search_reviews(session_id, q)
@@ -343,6 +345,9 @@ async def search_reviews(
     except Exception as e:
         logger.error(f"Error in search_reviews: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# Import models after app is defined to avoid circular imports
+from services.models import ReviewCreate, Review
 
 def redact_sensitive_info(text: str) -> str:
     """Redact sensitive information like emails and phone numbers"""
