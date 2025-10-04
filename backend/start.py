@@ -16,9 +16,6 @@ def check_env_vars():
     return True
 
 if __name__ == "__main__":
-    # Check environment variables
-    if not check_env_vars():
-    
     # Get port from environment or default to 8000
     port = int(os.environ.get("PORT", 8000))
     

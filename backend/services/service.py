@@ -1,16 +1,12 @@
-import os
 import asyncio
-import time
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime
 import google.generativeai as genai
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import json
-from dotenv import load_dotenv
-
-load_dotenv()
+from config import Config
 
 from services.models import ReviewCreate, Review
 from services.database import get_supabase_client
@@ -21,7 +17,7 @@ class ReviewService:
         self.supabase = get_supabase_client()
         
         # Initialize Gemini API
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        gemini_api_key = Config.GEMINI_API_KEY
         if gemini_api_key:
             genai.configure(api_key=gemini_api_key)
             self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')

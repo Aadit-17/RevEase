@@ -1,14 +1,10 @@
-import os
 from supabase import create_client, Client
 from typing import Optional
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+from config import Config
 
 # Supabase configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_URL = Config.SUPABASE_URL
+SUPABASE_KEY = Config.SUPABASE_KEY
 
 # Create Supabase client (will be created when first accessed)
 supabase: Optional[Client] = None
