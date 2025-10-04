@@ -503,6 +503,3 @@ class ReviewService:
         # This would typically be handled by a Supabase cron job or background task
         # Not implemented due to time constraints
         return 0
-
-# Create a global instance of the service, similar to Retrievus pattern
-review_service = ReviewService()

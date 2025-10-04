@@ -2,7 +2,9 @@ from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
 from typing import Optional, List
 from uuid import UUID
 from services import models
-from services.service import review_service
+from services.service import ReviewService
+
+review_service = ReviewService()
 
 router = APIRouter(tags=["reviews"])
 
