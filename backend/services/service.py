@@ -13,16 +13,28 @@ from services.database import get_supabase_client
 
 class ReviewService:
     def __init__(self):
-        # Initialize Supabase client
-        self.supabase = get_supabase_client()
-        
-        # Initialize Gemini API
-        gemini_api_key = Config.GEMINI_API_KEY
-        if gemini_api_key:
-            genai.configure(api_key=gemini_api_key)
-            self.gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
-        else:
-            self.gemini_model = None
+        # Don't initialize Supabase client immediately, just store None
+        self._supabase = None
+        self._gemini_model = None
+    
+    @property
+    def supabase(self):
+        """Lazy initialization of Supabase client"""
+        if self._supabase is None:
+            self._supabase = get_supabase_client()
+        return self._supabase
+    
+    @property
+    def gemini_model(self):
+        """Lazy initialization of Gemini model"""
+        if self._gemini_model is None:
+            gemini_api_key = Config.GEMINI_API_KEY
+            if gemini_api_key:
+                genai.configure(api_key=gemini_api_key)
+                self._gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+            else:
+                self._gemini_model = None
+        return self._gemini_model
     
     async def create_review(self, review_data: ReviewCreate) -> Review:
         """Create a new review"""
@@ -503,3 +515,6 @@ class ReviewService:
         # This would typically be handled by a Supabase cron job or background task
         # Not implemented due to time constraints
         return 0
+
+# Create a global instance of the service, similar to Retrievus pattern
+review_service = ReviewService()
