@@ -2,15 +2,13 @@ from supabase import create_client, Client
 from typing import Optional
 from config import Config
 
-# Supabase configuration
-SUPABASE_URL = Config.SUPABASE_URL
-SUPABASE_KEY = Config.SUPABASE_KEY
-
 # Create Supabase client (will be created when first accessed)
 supabase: Optional[Client] = None
 
 def get_supabase_client() -> Client:
     """Get Supabase client instance - lazy initialization"""
+    SUPABASE_URL = Config.SUPABASE_URL
+    SUPABASE_KEY = Config.SUPABASE_KEY
     global supabase
     
     # Return cached client if available
