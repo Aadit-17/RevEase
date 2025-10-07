@@ -1,10 +1,10 @@
-# Reviews Copilot
+# RevEase
 
 A fullstack application for managing and analyzing customer reviews with AI-powered responses.
 
 ## 📌 Project Overview
 
-Reviews Copilot is a full-stack application that helps businesses ingest, analyze, search, and respond to customer reviews.
+RevEase is a full-stack application that helps businesses ingest, analyze, search, and respond to customer reviews.
 
 ### Features
 
