@@ -5,7 +5,7 @@ from routes import router
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Reviews Copilot API",
+    title="RevEase API",
     description="AI-powered customer review analysis and response generation",
     version="1.0.0"
 )
@@ -31,7 +31,7 @@ app.include_router(router.router)
 async def root():
     """Root endpoint"""
     return {
-        "message": "Welcome to Reviews Copilot API",
+        "message": "Welcome to RevEase API",
         "version": "1.0.0",
         "docs": "/docs"
     }

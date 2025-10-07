@@ -13,8 +13,8 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
     <div className="flex flex-col h-screen w-full bg-background">
       <header className="border-b border-border bg-card p-4">
         <div className="flex items-center justify-between">
-          <h1 className="gradient-text text-xl font-bold">Reviews Copilot</h1>
-          
+          <h1 className="gradient-text text-xl font-bold">RevEase</h1>
+
           <nav className="flex items-center gap-2">
             <Button
               variant={currentPage === 'inbox' ? 'default' : 'ghost'}
@@ -37,7 +37,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
           </nav>
         </div>
       </header>
-      
+
       <main className="flex-1 overflow-auto bg-grid-pattern">
         {children}
       </main>
